@@ -36,14 +36,15 @@
 (defn row-major-timestep [data t]
   (letfn [(series-nth [row index]
             (struct fi-at-t (nth row t (last row)) index))]
-    (sort-by :f (map series-nth data (range)))))
+    (map series-nth data (range))))
 
 ;; Load a row-major data file and return (i) a function that gives a
 ;; sorted list of time series, (ii) the number of time series, and
 ;; (iii) the number of time steps.
 (defn row-major-dataset [filename & extra]
   (let [extra (apply hash-map extra) ; extra arguments
-        data (row-major-load filename extra)]
-    {:fn (memo/fifo (partial row-major-timestep data) :fifo/threshold 2)
+        data (row-major-load filename extra)
+        fun (memo/fifo (partial row-major-timestep data) :fifo/threshold 1)]
+    {:fn fun
      :i (count data)
      :t (reduce #'max (map count data))}))
