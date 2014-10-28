@@ -2,7 +2,7 @@
   worldtree.core
   (:require [clojure.tools.nrepl.server :as nrepl-server]
             [cider.nrepl :refer (cider-nrepl-handler)]
-            [worldtree.file :as file])
+            [worldtree.data :as data])
   (:gen-class))
 
 (defn mumbo []
