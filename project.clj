@@ -6,7 +6,8 @@
   :dependencies [[org.clojure/clojure "1.7.0-alpha2"]
                  [clojure-complete "0.2.4"]
                  [org.clojure/tools.nrepl "0.2.3"]
-                 [cider/cider-nrepl "0.8.0-SNAPSHOT"]]
+                 [cider/cider-nrepl "0.8.0-SNAPSHOT"]
+                 [org.apache.commons/commons-compress "1.4.1"]]
   :source-paths ["src"]
   :main worldtree.core
   :aot [worldtree.core])

@@ -1,7 +1,8 @@
 (ns ^{:author "James McClain <jwm@daystrom-data-concepts.com>"}
   worldtree.core
   (:require [clojure.tools.nrepl.server :as nrepl-server]
-            [cider.nrepl :refer (cider-nrepl-handler)])
+            [cider.nrepl :refer (cider-nrepl-handler)]
+            [worldtree.file :as file])
   (:gen-class))
 
 (defn mumbo []
