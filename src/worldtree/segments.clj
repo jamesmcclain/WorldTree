@@ -44,7 +44,7 @@
 
 (defn find-intersections [segments]
   (let [n (count segments)]
-    (if (< n 200)
+    (if (< n 333)
                                         ; not many segments, use quadratic algorithm
       (set (find-intersections-quadratic segments))
                                         ; otherwise, use divide-and-conquer algorithm
@@ -61,20 +61,16 @@
                         b+m (+ b m)]
                     (or (and (<= b median) (<= median b+m))
                         (and (<= b+m median) (<= median b)))))]
-          (let [through (filter through-median? segments)
-                above (filter above-median? segments)
-                below (filter below-median? segments)]
-            (println (count above) (count through) (count below))
-            (set/union
-                                        ; above
-             (if (== (count above) n)
-               (set (find-intersections-quadratic above))
-               (find-intersections above))
-                                        ; through
-             (if (== (count through) n)
-               (set (find-intersections-quadratic through))
-               (find-intersections through))
-                                        ; below
-             (if (== (count below) n)
-               (set (find-intersections-quadratic below))
-               (find-intersections below)))))))))
+          (let [below (filter below-median? segments) ; segments below the median
+                below (future (if (== (count below) n) ; intersections below the median
+                                (set (find-intersections-quadratic below))
+                                (find-intersections below)))
+
+                above (filter above-median? segments) ; segments above the median
+                above (future (if (== (count above) n) ; intersections above the median
+                                (set (find-intersections-quadratic above))
+                                (find-intersections above)))
+
+                through (filter through-median? segments) ; segments and intersections through the median
+                through (future (set (find-intersections-quadratic through)))]
+            (set/union @through @below @above)))))))
