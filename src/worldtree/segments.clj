@@ -1,6 +1,7 @@
 (ns ^{:author "James McClain <jwm@daystrom-data-concepts.com>"}
   worldtree.segments
   (:require [clojure.math.combinatorics :as combo]
+            [clojure.set :as set]
             [clojure.core.reducers :as r]))
 
 ;; Line segment structure.
@@ -29,17 +30,52 @@
      (let [{m1 :m b1 :b} segment1
            {m2 :m b2 :b} segment2]
        (if (not (== m1 m2))
-         (let [t (/ (- b2 b1) (- m1 m2))]
-           (cond
-            (< t 0.0) nil
-            (> t 1.0) nil
-            :else (struct intersection
-                          t ; :t, the time
-                          (:i segment1) ; :i, the first index
-                          (:i segment2)))))))) ; :j, the second index
+         (let [t (/ (- b2 b1) (- m1 m2))
+               i (min (:i segment1) (:i segment2))
+               j (max (:i segment1) (:i segment2))]
+           (if (and (<= 0.0 t) (< t 1.0))
+             (struct intersection t i j)))))))
 
 ;; Find the pairwise intersections in a bunch segments.
 (defn find-intersections-quadratic [segments]
   (r/foldcat
    (r/remove nil?
     (r/map compute-intersection (combo/combinations segments 2)))))
+
+(defn find-intersections [segments]
+  (let [n (count segments)]
+    (if (< n 1)
+                                        ; not many segments, use quadratic algorithm
+      (set (find-intersections-quadratic segments))
+                                        ; otherwise, use divide-and-conquer algorithm
+      (let [intercepts (sort (map :b segments))
+            median (nth intercepts (/ n 2))]
+        (letfn [(above-median? [segment]
+                  (or (< (:b segment) median)
+                      (< (+ (:b segment) (:m segment)) median)))
+                (below-median? [segment]
+                  (or (> (:b segment) median)
+                      (> (+ (:b segment) (:m segment)) median)))
+                (through-median? [segment]
+                  (letfn [(score [x]
+                            (cond (<  x 0.0) 0.0
+                                  (== x 0.0) 0.5
+                                  (>  x 0.0) 1.0))]
+                    (let [b (- (:b segment) median)
+                          b+m (- (+ (:b segment) (:m segment)) median)
+                          throughness (+ (score b) (score b+m))]
+                      (and (> throughness 0.0) (< throughness 2.0)))))]
+          (let [through (filter through-median? segments)
+                not-through (remove through-median? segments)
+                above (filter above-median? not-through)
+                below (filter below-median? not-through)]
+            (println (count above) (count through) (count below))
+            (set/union
+                                        ; above
+             (find-intersections above)
+                                        ; through
+             (if (== (count through) n)
+               (set (find-intersections-quadratic through))
+               (find-intersections through))
+                                        ; below
+             (find-intersections below))))))))
