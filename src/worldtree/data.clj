@@ -35,7 +35,9 @@
 ;; Return a list of fi-at-t structs for the data at time t.
 (defn row-major-timestep [data t]
   (letfn [(series-nth [row index]
-            (struct fi-at-t (nth row t (last row)) index))]
+            (struct fi-at-t
+                    (nth row t (last row)) ; :f, $f_{i}(t)$
+                    index))] ; :i, which time series
     (map series-nth data (range))))
 
 ;; Load a row-major data file and return (i) a function that gives a

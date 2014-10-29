@@ -8,6 +8,7 @@
                  [org.clojure/tools.nrepl "0.2.3"]
                  [cider/cider-nrepl "0.8.0-SNAPSHOT"]
                  [org.apache.commons/commons-compress "1.4.1"]
+                 [org.clojure/math.combinatorics "0.0.8"]
                  [org.clojure/core.memoize "0.5.6"]]
   :source-paths ["src"]
   :main worldtree.core
