@@ -44,38 +44,37 @@
 
 (defn find-intersections [segments]
   (let [n (count segments)]
-    (if (< n 1)
+    (if (< n 200)
                                         ; not many segments, use quadratic algorithm
       (set (find-intersections-quadratic segments))
                                         ; otherwise, use divide-and-conquer algorithm
       (let [intercepts (sort (map :b segments))
             median (nth intercepts (/ n 2))]
         (letfn [(above-median? [segment]
-                  (or (< (:b segment) median)
-                      (< (+ (:b segment) (:m segment)) median)))
+                  (or (<= (:b segment) median)
+                      (<= (+ (:b segment) (:m segment)) median)))
                 (below-median? [segment]
-                  (or (> (:b segment) median)
-                      (> (+ (:b segment) (:m segment)) median)))
+                  (or (>= (:b segment) median)
+                      (>= (+ (:b segment) (:m segment)) median)))
                 (through-median? [segment]
-                  (letfn [(score [x]
-                            (cond (<  x 0.0) 0.0
-                                  (== x 0.0) 0.5
-                                  (>  x 0.0) 1.0))]
-                    (let [b (- (:b segment) median)
-                          b+m (- (+ (:b segment) (:m segment)) median)
-                          throughness (+ (score b) (score b+m))]
-                      (and (> throughness 0.0) (< throughness 2.0)))))]
+                  (let [{b :b m :m} segment
+                        b+m (+ b m)]
+                    (or (and (<= b median) (<= median b+m))
+                        (and (<= b+m median) (<= median b)))))]
           (let [through (filter through-median? segments)
-                not-through (remove through-median? segments)
-                above (filter above-median? not-through)
-                below (filter below-median? not-through)]
+                above (filter above-median? segments)
+                below (filter below-median? segments)]
             (println (count above) (count through) (count below))
             (set/union
                                         ; above
-             (find-intersections above)
+             (if (== (count above) n)
+               (set (find-intersections-quadratic above))
+               (find-intersections above))
                                         ; through
              (if (== (count through) n)
                (set (find-intersections-quadratic through))
                (find-intersections through))
                                         ; below
-             (find-intersections below))))))))
+             (if (== (count below) n)
+               (set (find-intersections-quadratic below))
+               (find-intersections below)))))))))
