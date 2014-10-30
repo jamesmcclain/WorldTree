@@ -21,9 +21,9 @@
 
 ;; Find the point of intersection between two segments.
 (defn compute-intersection
-  ([T [segment1 segment2]]
-     (compute-intersection T segment1 segment2))
-  ([T chunk segment1 segment2]
+  ([[segment1 segment2]]
+     (compute-intersection segment1 segment2))
+  ([segment1 segment2]
      (let [{m1 :m b1 :b} segment1
            {m2 :m b2 :b} segment2]
        (if (not (== m1 m2))
@@ -32,7 +32,7 @@
                j (:i segment2)
                [i j] [(min i j) (max i j)]]
            (if (and (<= 0.0 t) (< t 1.0))
-             (struct intersection (+ T t) i j)))))))
+             (struct intersection t i j)))))))
 
 ;; Compute the series (plural) that might change the composition of
 ;; the chunk between time T and T+1.
@@ -41,49 +41,54 @@
         topkT+1 (map :i ((:topk dataset) (inc T))) ; top-k at time T+1
         before (set (take chunk topkT)) ; composition of the chunk at time T
         after (set (take chunk topkT+1)) ; composition of the chunk at time T+1
-        arrivals (set/difference after before)
-        departures (set/difference before after)
-        relevant (set/union arrivals departures)]
-    (letfn [(relevant? [[i _]] (relevant i))]
+        movers (set/difference (set/union before after) (set/intersection before after))]
+    (letfn [(relevant? [[i _]] (movers i))]
       (let [relevant-ranks (map second (filter relevant? (map list topkT (range))))
-            m (reduce #'min relevant-ranks)
-            M (reduce #'max relevant-ranks)
-            relevant-rank-range (range m (inc M))]
+            m (reduce #'min (conj relevant-ranks Long/MAX_VALUE))
+            M (inc (reduce #'max (conj relevant-ranks Long/MIN_VALUE)))
+            relevant-rank-range (range m M)]
         (map #(nth topkT %) relevant-rank-range)))))
 
 ;; Find the pairwise intersections in a bunch segments.
-(defn find-intersections-quadratic [T segments]
-  (remove nil? (map (partial compute-intersection T) (combo/combinations segments 2))))
+(defn find-intersections-quadratic [segments]
+  (remove nil? (map #(compute-intersection %) (combo/combinations segments 2))))
 
-;; (defn find-intersections [segments]
-;;   (let [n (count segments)]
-;;     (if (< n 333)
-;;                                         ; not many segments, use quadratic algorithm
-;;       (set (find-intersections-quadratic segments))
-;;                                         ; otherwise, use divide-and-conquer algorithm
-;;       (let [intercepts (sort (map :b segments))
-;;             median (nth intercepts (/ n 2))]
-;;         (letfn [(above-median? [segment]
-;;                   (or (<= (:b segment) median)
-;;                       (<= (+ (:b segment) (:m segment)) median)))
-;;                 (below-median? [segment]
-;;                   (or (>= (:b segment) median)
-;;                       (>= (+ (:b segment) (:m segment)) median)))
-;;                 (through-median? [segment]
-;;                   (let [{b :b m :m} segment
-;;                         b+m (+ b m)]
-;;                     (or (and (<= b median) (<= median b+m))
-;;                         (and (<= b+m median) (<= median b)))))]
-;;           (let [above (filter above-median? segments) ; segments above the median
-;;                 above (if (== (count above) n) ; intersections above the median
-;;                         (set (find-intersections-quadratic above))
-;;                         (find-intersections above))
+(defn find-intersections [segments]
+  (let [n (count segments)]
+    (if (< n 333)
+                                        ; not many segments, use quadratic algorithm
+      (set (find-intersections-quadratic segments))
+                                        ; otherwise, use divide-and-conquer algorithm
+      (let [intercepts (sort (map :b segments))
+            median (nth intercepts (/ n 2))]
+        (letfn [(above-median? [segment]
+                  (or (<= (:b segment) median)
+                      (<= (+ (:b segment) (:m segment)) median)))
+                (below-median? [segment]
+                  (or (>= (:b segment) median)
+                      (>= (+ (:b segment) (:m segment)) median)))
+                (through-median? [segment]
+                  (let [{b :b m :m} segment
+                        b+m (+ b m)]
+                    (or (and (<= b median) (<= median b+m))
+                        (and (<= b+m median) (<= median b)))))]
+          (let [above-seg (filter above-median? segments) ; segments above the median
+                above-inter (if (== (count above-seg) n) ; intersections above the median
+                              (set (find-intersections-quadratic above-seg))
+                              (find-intersections above-seg))
+                below-seg (filter below-median? segments) ; segments below the median
+                below-inter (if (== (count below-seg) n) ; intersections below the median
+                              (set (find-intersections-quadratic below-seg))
+                              (find-intersections below-seg))
+                through-seg (filter through-median? segments) ; segments and intersections through the median
+                through-inter (set (find-intersections-quadratic through-seg))]
+            (set/union above-inter through-inter below-inter)))))))
 
-;;                 below (filter below-median? segments) ; segments below the median
-;;                 below (if (== (count below) n) ; intersections below the median
-;;                         (set (find-intersections-quadratic below))
-;;                         (find-intersections below))
-
-;;                 through (filter through-median? segments) ; segments and intersections through the median
-;;                 through (set (find-intersections-quadratic through))]
-;;             (set/union above through below)))))))
+(defn compute-all-intersections [dataset T]
+  (letfn [(compute-segment-local [i]
+            (compute-segment dataset T i))
+          (chunk-to-intersections [chunk]
+            (find-intersections (map compute-segment-local (compute-chunk-changers dataset T chunk))))]
+    (let [logn (int (Math/ceil (/ (Math/log (:n dataset)) (Math/log 2))))
+          chunks (map #(int (Math/pow 2 %)) (range 1 logn))]
+      (r/foldcat (r/mapcat chunk-to-intersections chunks)))))
