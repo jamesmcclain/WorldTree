@@ -8,69 +8,82 @@
 (defstruct segment :m :b :i)
 
 ;; An intersection between $f_{i}$ and $f_{j}$ at time $t$.
-(defstruct intersection :t :i :j)
+(defstruct intersection :chunk :T :i :j)
 
-;; A function to return all of the segments between from
-;; $f_{i}(t_{1})$ to $f_{i}(t_{2})$ for all $i$ in the dataset.
-(defn compute-segments [dataset t1 t2]
-  (let [timestep (:fn dataset) ; a function that returns the value of every series at time t
-        at-time-t1 (timestep t1) ; the series (plural) at time t1
-        at-time-t2 (timestep t2)] ; the same at time t2
-    (letfn [(compute-segment [at-time-t1 at-time-t2]
-              (struct segment
-                      (- (:f at-time-t2) (:f at-time-t1)) ; :m, the slope
-                      (:f at-time-t1) ; :b, the y-intercept
-                      (:i at-time-t1)))] ; :i, the series (singular) that this segment is from
-      (map compute-segment at-time-t1 at-time-t2))))
+;; Compute the segment between $f_{i}(T)$ and $f_{i}(T+1)$.
+(defn compute-segment [dataset T i]
+  (let [snapshot (:snapshot dataset)
+        at-T (:f (nth (snapshot T) i))
+        at-T+1 (:f (nth (snapshot (inc T)) i))
+        m (- at-T+1 at-T)
+        b at-T]
+    (struct segment m b i)))
 
 ;; Find the point of intersection between two segments.
 (defn compute-intersection
-  ([[segment1 segment2]] (compute-intersection segment1 segment2))
-  ([segment1 segment2]
+  ([T chunk [segment1 segment2]]
+     (compute-intersection T chunk segment1 segment2))
+  ([T chunk segment1 segment2]
      (let [{m1 :m b1 :b} segment1
            {m2 :m b2 :b} segment2]
        (if (not (== m1 m2))
          (let [t (/ (- b2 b1) (- m1 m2))
-               i (min (:i segment1) (:i segment2))
-               j (max (:i segment1) (:i segment2))]
+               i (:i segment1)
+               j (:i segment2)
+               [i j] [(min i j) (max i j)]]
            (if (and (<= 0.0 t) (< t 1.0))
-             (struct intersection t i j)))))))
+             (struct intersection chunk (+ T t) i j)))))))
+
+;; Compute the series (plural) that might change the composition of
+;; the chunk between time T and T+1.
+(defn compute-chunk-changers [dataset T chunk]
+  (let [topkT (map :i ((:topk dataset) T)) ; top-k at time T
+        topkT+1 (map :i ((:topk dataset) (inc T))) ; top-k at time T+1
+        before (set (take chunk topkT)) ; composition of the chunk at time T
+        after (set (take chunk topkT+1)) ; composition of the chunk at time T+1
+        arrivals (set/difference after before)
+        departures (set/difference before after)
+        relevant (set/union arrivals departures)]
+    (letfn [(relevant? [[i _]] (relevant i))]
+      (let [relevant-ranks (map second (filter relevant? (map list topkT (range))))
+            m (reduce #'min relevant-ranks)
+            M (reduce #'max relevant-ranks)
+            relevant-rank-range (range m (inc M))]
+        (map #(nth topkT %) relevant-rank-range)))))
 
 ;; Find the pairwise intersections in a bunch segments.
-(defn find-intersections-quadratic [segments]
-  (r/foldcat
-   (r/remove nil?
-    (r/map compute-intersection (combo/combinations segments 2)))))
+(defn find-intersections-quadratic [T chunk segments]
+  (remove nil? (map (partial compute-intersection T chunk) (combo/combinations segments 2))))
 
-(defn find-intersections [segments]
-  (let [n (count segments)]
-    (if (< n 333)
-                                        ; not many segments, use quadratic algorithm
-      (set (find-intersections-quadratic segments))
-                                        ; otherwise, use divide-and-conquer algorithm
-      (let [intercepts (sort (map :b segments))
-            median (nth intercepts (/ n 2))]
-        (letfn [(above-median? [segment]
-                  (or (<= (:b segment) median)
-                      (<= (+ (:b segment) (:m segment)) median)))
-                (below-median? [segment]
-                  (or (>= (:b segment) median)
-                      (>= (+ (:b segment) (:m segment)) median)))
-                (through-median? [segment]
-                  (let [{b :b m :m} segment
-                        b+m (+ b m)]
-                    (or (and (<= b median) (<= median b+m))
-                        (and (<= b+m median) (<= median b)))))]
-          (let [below (filter below-median? segments) ; segments below the median
-                below (future (if (== (count below) n) ; intersections below the median
-                                (set (find-intersections-quadratic below))
-                                (find-intersections below)))
+;; (defn find-intersections [segments]
+;;   (let [n (count segments)]
+;;     (if (< n 333)
+;;                                         ; not many segments, use quadratic algorithm
+;;       (set (find-intersections-quadratic segments))
+;;                                         ; otherwise, use divide-and-conquer algorithm
+;;       (let [intercepts (sort (map :b segments))
+;;             median (nth intercepts (/ n 2))]
+;;         (letfn [(above-median? [segment]
+;;                   (or (<= (:b segment) median)
+;;                       (<= (+ (:b segment) (:m segment)) median)))
+;;                 (below-median? [segment]
+;;                   (or (>= (:b segment) median)
+;;                       (>= (+ (:b segment) (:m segment)) median)))
+;;                 (through-median? [segment]
+;;                   (let [{b :b m :m} segment
+;;                         b+m (+ b m)]
+;;                     (or (and (<= b median) (<= median b+m))
+;;                         (and (<= b+m median) (<= median b)))))]
+;;           (let [above (filter above-median? segments) ; segments above the median
+;;                 above (if (== (count above) n) ; intersections above the median
+;;                         (set (find-intersections-quadratic above))
+;;                         (find-intersections above))
 
-                above (filter above-median? segments) ; segments above the median
-                above (future (if (== (count above) n) ; intersections above the median
-                                (set (find-intersections-quadratic above))
-                                (find-intersections above)))
+;;                 below (filter below-median? segments) ; segments below the median
+;;                 below (if (== (count below) n) ; intersections below the median
+;;                         (set (find-intersections-quadratic below))
+;;                         (find-intersections below))
 
-                through (filter through-median? segments) ; segments and intersections through the median
-                through (future (set (find-intersections-quadratic through)))]
-            (set/union @through @below @above)))))))
+;;                 through (filter through-median? segments) ; segments and intersections through the median
+;;                 through (set (find-intersections-quadratic through))]
+;;             (set/union above through below)))))))
