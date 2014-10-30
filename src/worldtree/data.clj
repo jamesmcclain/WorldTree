@@ -7,8 +7,13 @@
            (org.apache.commons.compress.compressors.bzip2 BZip2CompressorInputStream)
            (org.apache.commons.compress.compressors.xz XZCompressorInputStream)))
 
-;; Structure to hold $f_{i}(t)$ for some fixed time $t$ and given index $i$
-(defstruct fi-at-t :f :i)
+;; Structure to hold $f_{i}(T)$ for some fixed time $t$ and given index $i$
+(defstruct f-at-T :f :i)
+
+;; Structure to hold a dataset.  :snapshot is a function that gives
+;; the state of the dataset at time t.  :topk is a function that gives
+;; the sorted order of the series (plural) indices.
+(defstruct dataset :snapshot :topk :n :max_t)
 
 ;; Take a file name and return a compressed input stream.
 (defmacro fn->cis [filename compstream]
@@ -33,10 +38,10 @@
           (recur (conj data series) (rest lines)))))))
 
 ;; Return a list of fi-at-t structs for the data at time t.
-(defn row-major-timestep [data t]
+(defn row-major-timestep [data T]
   (letfn [(series-nth [row index]
-            (struct fi-at-t
-                    (nth row t (last row)) ; :f, $f_{i}(t)$
+            (struct f-at-T
+                    (nth row T (last row)) ; :f, $f_{i}(T)$
                     index))] ; :i, which time series
     (map series-nth data (range))))
 
@@ -46,7 +51,10 @@
 (defn row-major-dataset [filename & extra]
   (let [extra (apply hash-map extra) ; extra arguments
         data (row-major-load filename extra)
-        fun (memo/fifo (partial row-major-timestep data) :fifo/threshold 1)]
-    {:fn fun
-     :i (count data)
-     :t (reduce #'max (map count data))}))
+        snapshot (memo/fifo (partial row-major-timestep data))
+        topk (memo/fifo (fn [t] (sort-by :f (snapshot t))))]
+    (struct dataset
+            snapshot ; :snapshot
+            topk ; :topk
+            (count data) ; :n, the number of time series
+            (reduce #'max (map count data))))) ; :max_t the largest time index
