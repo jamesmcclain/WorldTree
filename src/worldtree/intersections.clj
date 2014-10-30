@@ -28,7 +28,7 @@
   (remove nil? (map #(compute-intersection %) (combo/combinations segments 2))))
 
 ;; Find the pairwise intersections in a large bunch of segments.
-(defn compute-intersections [segments]
+(defn compute-intersections-nlgn [segments]
   (let [n (count segments)]
     (if (< n 300)
                                         ; not many segments, use quadratic algorithm
@@ -59,8 +59,13 @@
                 through-inter (set (compute-intersections-quadratic through-seg))]
             (set/union above-inter through-inter below-inter)))))))
 
-(defn compute-all-intersections [dataset T]
-  (letfn [(chunk-to-intersections [chunk] ; return the set of intersections that change this chunk
-            (compute-intersections (map (partial segments/compute-segment dataset T)
-                                        (segments/compute-chunk-changers dataset T chunk))))]
-    (r/fold set/union (r/map chunk-to-intersections (:chunks dataset)))))
+(defn report-all-intersections [dataset T]
+  (compute-intersections-nlgn
+   (r/foldcat
+    (r/map (partial segments/compute-segment dataset T) (range (:n dataset))))))
+
+(defn report-interesting-intersections [dataset T]
+  (compute-intersections-nlgn
+   (r/foldcat
+    (r/map (partial segments/compute-segment dataset T)
+           (r/mapcat (partial segments/compute-chunk-changers dataset T) (:chunks dataset))))))

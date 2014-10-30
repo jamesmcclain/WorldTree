@@ -12,6 +12,4 @@
                  [org.clojure/core.memoize "0.5.6"]]
   :source-paths ["src"]
   :main worldtree.core
-  :aot [worldtree.core]
-  ;; :aot [worldtree.core worldtree.data worldtree.segments worldtree.intersections]
-  )
+  :aot [worldtree.core worldtree.data worldtree.segments worldtree.intersections])
