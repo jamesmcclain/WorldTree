@@ -13,7 +13,7 @@
 ;; Structure to hold a dataset.  :snapshot is a function that gives
 ;; the state of the dataset at time t.  :topk is a function that gives
 ;; the sorted order of the series (plural) indices.
-(defstruct dataset :snapshot :topk :n :max_t)
+(defstruct dataset :snapshot :topk :n :max_t :chunks)
 
 ;; Take a file name and return a compressed input stream.
 (defmacro fn->cis [filename compstream]
@@ -52,9 +52,12 @@
   (let [extra (apply hash-map extra) ; extra arguments
         data (row-major-load filename extra)
         snapshot (memo/fifo (partial row-major-timestep data))
-        topk (memo/fifo (fn [t] (sort-by :f (snapshot t))))]
+        topk (memo/fifo (fn [t] (sort-by :f (snapshot t))))
+        logn (int (Math/ceil (Math/log (count data))))
+        chunks (map #(int (Math/exp %)) (range 1 logn))]
     (struct dataset
             snapshot ; :snapshot
             topk ; :topk
             (count data) ; :n, the number of time series
-            (reduce #'max (map count data))))) ; :max_t the largest time index
+            (reduce #'max (map count data)) ; :time steps
+            chunks)))
