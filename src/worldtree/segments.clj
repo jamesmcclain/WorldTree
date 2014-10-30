@@ -8,7 +8,7 @@
 (defstruct segment :m :b :i)
 
 ;; An intersection between $f_{i}$ and $f_{j}$ at time $t$.
-(defstruct intersection :chunk :T :i :j)
+(defstruct intersection :T :i :j)
 
 ;; Compute the segment between $f_{i}(T)$ and $f_{i}(T+1)$.
 (defn compute-segment [dataset T i]
@@ -21,8 +21,8 @@
 
 ;; Find the point of intersection between two segments.
 (defn compute-intersection
-  ([T chunk [segment1 segment2]]
-     (compute-intersection T chunk segment1 segment2))
+  ([T [segment1 segment2]]
+     (compute-intersection T segment1 segment2))
   ([T chunk segment1 segment2]
      (let [{m1 :m b1 :b} segment1
            {m2 :m b2 :b} segment2]
@@ -32,7 +32,7 @@
                j (:i segment2)
                [i j] [(min i j) (max i j)]]
            (if (and (<= 0.0 t) (< t 1.0))
-             (struct intersection chunk (+ T t) i j)))))))
+             (struct intersection (+ T t) i j)))))))
 
 ;; Compute the series (plural) that might change the composition of
 ;; the chunk between time T and T+1.
@@ -52,8 +52,8 @@
         (map #(nth topkT %) relevant-rank-range)))))
 
 ;; Find the pairwise intersections in a bunch segments.
-(defn find-intersections-quadratic [T chunk segments]
-  (remove nil? (map (partial compute-intersection T chunk) (combo/combinations segments 2))))
+(defn find-intersections-quadratic [T segments]
+  (remove nil? (map (partial compute-intersection T) (combo/combinations segments 2))))
 
 ;; (defn find-intersections [segments]
 ;;   (let [n (count segments)]
