@@ -7,13 +7,14 @@
            (org.apache.commons.compress.compressors.bzip2 BZip2CompressorInputStream)
            (org.apache.commons.compress.compressors.xz XZCompressorInputStream)))
 
-;; Structure to hold $f_{i}(T)$ for some fixed time $t$ and given index $i$
-(defstruct function-at-T :f :i)
+;; Structure to hold $f_{i}(t)$ for some fixed time $t$ and given index $i$
+(defstruct function-at-t :f :i)
 
 ;; Structure to hold a dataset.  :snapshot is a function that gives
-;; the state of the dataset at time t.  :topk is a function that gives
-;; the sorted order of the series (plural) indices.
-(defstruct dataset :snapshot :topk :n :max_t :chunks)
+;; the state of the dataset at time t, :n is the number of time
+;; series, :m is the number of time steps in each series, and :chunks
+;; is the list of chunks.
+(defstruct dataset :snapshot :n :m :chunks)
 
 ;; Take a file name and return a compressed input stream.
 (defmacro fn->cis [filename compstream]
@@ -23,8 +24,8 @@
 (defmacro fn->cos [filename]
   `(-> ~filename io/file io/output-stream GzipCompressorOutputStream. io/writer))
 
-(defn dump [directory T thing]
-  (spit (str directory "/" T) thing))
+(defn dump [directory t thing]
+  (spit (str directory "/" t) thing))
 
 ;; Load time series data from a row-major data file.
 (defn row-major-load [filename extra]
@@ -37,35 +38,33 @@
                    :else (-> filename io/reader))]
     (with-open [file file]
       (let [lines (drop row-drop (line-seq file))]
-        (loop [data '() lines lines]
+        (loop [data [] lines lines]
           (if (empty? lines)
-            data ; nothing more to be read, return list of vectors
-            (let [series (string/split (first lines) #"\s+") ; split by whitespace
-                  series (drop-last column-drop-end (drop column-drop series)) ; drop unwanted columns
-                  series (into [] (map #(Double/parseDouble %) series))]
-              (recur (conj data series) (rest lines)))))))))
+            data     ; nothing more to be read, return list of vectors
+            (let [series (string/split (first lines) #"\s+")]  ; split by whitespace
+              (if (< (count series) 2)
+                (recur data (rest lines)) ; empty line, skip
+                (let [series (drop-last column-drop-end (drop column-drop series)) ; drop unwanted columns
+                      series (into [] (map #(Double/parseDouble %) series))]
+                  (recur (conj data series) (rest lines)))))))))))
 
 ;; Return a list of fi-at-t structs for the data at time t.
-(defn row-major-timestep [data T]
+(defn row-major-timestep [data t]
   (letfn [(series-nth [row index]
-            (struct function-at-T
-                    (nth row T (last row)) ; :f, $f_{i}(T)$
-                    index))] ; :i, which time series
+            (struct function-at-t
+                    (nth row t (last row)) ; :f, $f_{i}(t)$
+                    index))]               ; :i, which time series
     (map series-nth data (range))))
 
-;; Load a row-major data file and return (i) a function that gives a
-;; sorted list of time series, (ii) the number of time series, and
-;; (iii) the number of time steps.
+;; Load a row-major data file and return a dataset structure.
 (defn row-major-dataset [filename & extra]
-  (let [extra (apply hash-map extra) ; extra arguments
+  (let [extra (apply hash-map extra)    ; extra arguments
         data (row-major-load filename extra)
-        snapshot (memo/fifo (partial row-major-timestep data))
-        topk (memo/fifo (fn [t] (sort-by :f (snapshot t))))
-        logn (int (Math/ceil (Math/log (count data))))
-        chunks (map #(int (Math/exp %)) (range 1 logn))]
+        snapshot (memo/fifo (fn [t] (row-major-timestep data t)))
+        logn (int (Math/ceil (/ (Math/log (count data)) (Math/log 2))))
+        chunks (map #(int (Math/pow 2 %)) (range 1 logn))]
     (struct dataset
-            snapshot ; :snapshot
-            topk ; :topk
-            (count data) ; :n, the number of time series
-            (reduce #'max (map count data)) ; :time steps
+            snapshot                   ; :snapshot
+            (count data)               ; :n, the number of time series
+            (reduce #'max (map count data)) ; :m, the number of time steps (same for all series)
             chunks)))

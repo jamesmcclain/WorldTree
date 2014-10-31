@@ -3,8 +3,7 @@
   (:require [clojure.tools.nrepl.server :as nrepl-server]
             [cider.nrepl :refer (cider-nrepl-handler)]
             [worldtree.data :as data]
-            [worldtree.segments :as segments]
-            [worldtree.intersections :as intersections])
+            [worldtree.series :as series])
   (:gen-class))
 
 (defn mumbo []
