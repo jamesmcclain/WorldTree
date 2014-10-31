@@ -3,12 +3,12 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.core.memoize :as memo])
-  (:import (org.apache.commons.compress.compressors.gzip GzipCompressorInputStream)
+  (:import (org.apache.commons.compress.compressors.gzip GzipCompressorInputStream GzipCompressorOutputStream)
            (org.apache.commons.compress.compressors.bzip2 BZip2CompressorInputStream)
            (org.apache.commons.compress.compressors.xz XZCompressorInputStream)))
 
 ;; Structure to hold $f_{i}(T)$ for some fixed time $t$ and given index $i$
-(defstruct f-at-T :f :i)
+(defstruct function-at-T :f :i)
 
 ;; Structure to hold a dataset.  :snapshot is a function that gives
 ;; the state of the dataset at time t.  :topk is a function that gives
@@ -19,6 +19,13 @@
 (defmacro fn->cis [filename compstream]
   `(-> ~filename io/file io/input-stream ~compstream io/reader))
 
+;; Compressed output stream.
+(defmacro fn->cos [filename]
+  `(-> ~filename io/file io/output-stream GzipCompressorOutputStream. io/writer))
+
+(defn dump [directory T thing]
+  (spit (str directory "/" T) thing))
+
 ;; Load time series data from a row-major data file.
 (defn row-major-load [filename extra]
   (let [column-drop (get extra :column-drop 0) ; columns to drop at the beginning (left) of the data set
@@ -27,20 +34,21 @@
         file (cond (re-find #"\.gz$" filename) (fn->cis filename GzipCompressorInputStream.) ; gzip
                    (re-find #"\.bz2$" filename) (fn->cis filename BZip2CompressorInputStream.) ; bzip2
                    (re-find #"\.xz$" filename) (fn->cis filename XZCompressorInputStream.) ; xz
-                   :else (-> filename io/reader)) ; plain
-        lines (drop row-drop (line-seq file))]
-    (loop [data '() lines lines]
-      (if (empty? lines)
-        data ; nothing more to be read, return list of vectors
-        (let [series (string/split (first lines) #"\s+") ; split by whitespace
-              series (drop-last column-drop-end (drop column-drop series)) ; drop unwanted columns
-              series (into [] (map #(Double/parseDouble %) series))]
-          (recur (conj data series) (rest lines)))))))
+                   :else (-> filename io/reader))]
+    (with-open [file file]
+      (let [lines (drop row-drop (line-seq file))]
+        (loop [data '() lines lines]
+          (if (empty? lines)
+            data ; nothing more to be read, return list of vectors
+            (let [series (string/split (first lines) #"\s+") ; split by whitespace
+                  series (drop-last column-drop-end (drop column-drop series)) ; drop unwanted columns
+                  series (into [] (map #(Double/parseDouble %) series))]
+              (recur (conj data series) (rest lines)))))))))
 
 ;; Return a list of fi-at-t structs for the data at time t.
 (defn row-major-timestep [data T]
   (letfn [(series-nth [row index]
-            (struct f-at-T
+            (struct function-at-T
                     (nth row T (last row)) ; :f, $f_{i}(T)$
                     index))] ; :i, which time series
     (map series-nth data (range))))

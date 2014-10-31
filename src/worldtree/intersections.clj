@@ -3,7 +3,8 @@
   (:require [clojure.math.combinatorics :as combo]
             [clojure.set :as set]
             [clojure.core.reducers :as r]
-            [worldtree.segments :as segments]))
+            [worldtree.segments :as segments]
+            [worldtree.data :as data]))
 
 ;; An intersection between $f_{i}$ and $f_{j}$ at time $t$.
 (defstruct intersection :T :i :j)
@@ -20,7 +21,7 @@
                i (:i segment1)
                j (:i segment2)
                [i j] [(min i j) (max i j)]]
-           (if (and (<= 0.0 t) (< t 1.0))
+           (if (and (< 0.0 t) (<= t 1.0))
              (struct intersection t i j)))))))
 
 ;; Find the pairwise intersections in a bunch segments.
@@ -50,11 +51,11 @@
           (let [above-seg (filter above-median? segments) ; segments above the median
                 above-inter (if (== (count above-seg) n) ; intersections above the median
                               (set (compute-intersections-quadratic above-seg))
-                              (compute-intersections above-seg))
+                              (compute-intersections-nlgn above-seg))
                 below-seg (filter below-median? segments) ; segments below
                 below-inter (if (== (count below-seg) n) ; intersections below
                               (set (compute-intersections-quadratic below-seg))
-                              (compute-intersections below-seg))
+                              (compute-intersections-nlgn below-seg))
                 through-seg (filter through-median? segments)
                 through-inter (set (compute-intersections-quadratic through-seg))]
             (set/union above-inter through-inter below-inter)))))))
@@ -64,8 +65,23 @@
    (r/foldcat
     (r/map (partial segments/compute-segment dataset T) (range (:n dataset))))))
 
+;; (defn report-interesting-intersections [dataset T]
+;;   (compute-intersections-nlgn
+;;    (r/foldcat
+;;     (r/map (partial segments/compute-segment dataset T)
+;;            (r/mapcat (partial segments/compute-chunk-changers dataset T) (:chunks dataset))))))
+
 (defn report-interesting-intersections [dataset T]
-  (compute-intersections-nlgn
-   (r/foldcat
-    (r/map (partial segments/compute-segment dataset T)
-           (r/mapcat (partial segments/compute-chunk-changers dataset T) (:chunks dataset))))))
+  (letfn [(chunks-to-intersections [chunk]
+            (compute-intersections-nlgn
+             (map (partial segments/compute-segment dataset T)
+                  (segments/compute-chunk-changers dataset T chunk))))]
+    (r/fold set/union (r/map chunks-to-intersections (:chunks dataset)))))
+
+(defstruct frame :topk :changes)
+
+(defn dump-interesting-intersections [directory dataset]
+  (dotimes [T (dec (:max_t dataset))]
+    (let [topk (map :i ((:topk dataset) T))
+          changes (sort-by :T (report-interesting-intersections dataset T))]
+      (data/dump directory T (struct frame topk changes)))))

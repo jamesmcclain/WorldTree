@@ -5,7 +5,7 @@
             [clojure.core.reducers :as r]))
 
 ;; Line segment structure.
-(defstruct segment :m :b :i)
+(defstruct segment :yrange :m :b :i)
 
 ;; Compute the segment between $f_{i}(T)$ and $f_{i}(T+1)$.
 (defn compute-segment [dataset T i]
@@ -13,8 +13,9 @@
         at-T (:f (nth (snapshot T) i))
         at-T+1 (:f (nth (snapshot (inc T)) i))
         m (- at-T+1 at-T)
-        b at-T]
-    (struct segment m b i)))
+        b at-T
+        b+m (+ b m)]
+    (struct segment [(min b b+m) (max b b+m)] m b i)))
 
 ;; Compute the series (plural) that might change the composition of
 ;; the chunk between time T and T+1.
