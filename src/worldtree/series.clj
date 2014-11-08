@@ -81,21 +81,26 @@
 ;; Query the segment tree for segments that intersect q after time
 ;; T+t.  Only the first such segment is returned.
 (defn query-segment-tree [T tree q T+t]
-  (letfn [(before? [intersection] ; does the intersection before time T+t?
-            (if (not (nil? intersection))
-              (<= (:T+t intersection) T+t)))]
+  (letfn [(after? [inter] ; does the intersection before time T+t?
+            (if (not (nil? inter))
+              (> (:T+t inter) T+t)))]
     (cond
                                         ; if this is a node, query the subtrees
      (= (:type tree) :node)
      (let [y (:y tree)
            ymin (:ymin q)
-           ymax (:ymax q)]
-       (or (if (<= ymin y) (query-segment-tree T (:left tree) q T+t))
-           (query-segment-tree T (:middle tree) q T+t)
-           (if (>= ymax y) (query-segment-tree T (:right tree) q T+t))))
+           ymax (:ymax q)
+           inters (remove nil?
+                          (list (query-segment-tree T (:middle tree) q T+t)
+                                (if (<= ymin y) (query-segment-tree T (:left tree) q T+t))
+                                (if (>= ymax y) (query-segment-tree T (:right tree) q T+t))))]
+       (if (not (empty? inters))
+         (reduce (partial min-key :T+t) inters)))
                                         ; if this is a leaf, find the first intersection after T+t
      (= (:type tree) :leaf)
-     (first (remove before? (sort-by :T+t (map #(compute-intersection T q %) (:segments tree)))))
+     (let [inters (filter after? (map #(compute-intersection T q %) (:segments tree)))]
+       (if (not (empty? inters))
+         (reduce (partial min-key :T+t) inters)))
                                         ; otherwise, do nothing
      :else nil)))
 
@@ -105,13 +110,15 @@
   (loop [current-segment starting-segment
          current-time (+ T 0.0)
          trace []]
-    (let [intersection (query-segment-tree T tree current-segment current-time)]
-      (if (nil? intersection)
-        trace ; no more intersections in this frame, return trace
-        (let [next-index (if (== (:i intersection) (:i current-segment))
-                           (:j intersection) (:i intersection)) ; the index of the intersecting segment
+    (let [inter (query-segment-tree T tree current-segment current-time)]
+      (if (nil? inter)
+                                        ; no more intersections in this frame, return trace
+        trace
+                                        ; otherwise, continue tracing
+        (let [next-index (if (== (:i inter) (:i current-segment))
+                           (:j inter) (:i inter)) ; the index of the intersecting segment
               next-segment (nth segments next-index) ; the intersecting segment
-              next-time (:T+t intersection)
+              next-time (:T+t inter)
               change (struct change next-time (list (:i current-segment) next-index))]
           (if (segment< next-segment current-segment)
                                         ; if next-segment has better rank, chunk does not change.
