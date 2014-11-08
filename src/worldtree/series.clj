@@ -2,7 +2,8 @@
   worldtree.series
   (:require [clojure.set :as set]
             [clojure.core.reducers :as r]
-            [clojure.core.memoize :as memo]))
+            [clojure.core.memoize :as memo])
+  (:use [worldtree.data :only [fnkey]]))
 
 (defstruct segment :ymin :ymax :m :b :i)
 (defstruct node :type :y :left :middle :right)
@@ -14,8 +15,8 @@
 ;; Compute the segment between $f_{i}(t)$ and $f_{i}(t+1)$.
 (defn compute-segment [dataset t i]
   (let [snapshot (:snapshot dataset)
-        y0 (:f (nth (snapshot t) i))
-        y1 (:f (nth (snapshot (inc t)) i))
+        y0 (:f (fnkey dataset :snapshot t i))
+        y1 (:f (fnkey dataset :snapshot (inc t) i))
         m (- y1 y0)
         b y0
         b+m (+ b m)]
@@ -155,7 +156,7 @@
 
 ;; Record all of the changes of rank in the dataset that are relevant
 ;; vis-a-vis chunks.
-(defn record-all-changes [dataset dir]
+(defn build-index [dataset dir]
   (letfn [(is-dir? [thing] (.isDirectory (java.io.File. thing)))
           (exists? [thing] (.exists (java.io.File. thing)))]
     (let [m (:m dataset)
