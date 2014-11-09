@@ -38,7 +38,7 @@
   (let [n (count data)
         m (reduce #'max (map count data))
         series (fn [i] (nth data i))
-        snapshot (memo/fifo (fn [t] (into (vector-of :double) (map #(nth % t) data))) :fifo/threshold (inc m))
+        snapshot (memo/fifo (fn [t] (doall (into (vector-of :double) (map #(nth % t) data)))) :fifo/threshold (inc m))
         logn (int (Math/ceil (/ (Math/log (count data)) (Math/log 2))))
         chunks (map #(int (Math/pow 2 %)) (range 1 logn))]
     (struct dataset
@@ -60,6 +60,6 @@
 
 (defn random-data [n m sigma]
   (letfn [(random-series [mean]
-            (into (vector-of :double)
-                  (repeatedly m (fn [] (NormalRandomVariable mean sigma)))))]
-    (vec (map random-series (range 0 (* 10 n) 10)))))
+            (doall (into (vector-of :double)
+                         (repeatedly m (fn [] (NormalRandomVariable mean sigma))))))]
+    (vec (doall (map random-series (range 0 (* 10 n) 10))))))

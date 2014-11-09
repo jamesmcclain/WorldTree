@@ -9,7 +9,7 @@
 (defstruct change :T+t :ij)
 (defstruct frame :chunk-list :change-list)
 
-;; ------------------------- SEGMENTS -------------------------
+;; ------------------------- SEGMENTS AND RANKINGS -------------------------
 
 ;; Comparator for segments
 (defn segment< [one two]
@@ -19,8 +19,11 @@
           (== b1 b2) (> m1 m2)
           :else (> b1 b2))))
 
-(defmacro snapshot [dataset t i]
-  `(nth ((get ~dataset :snapshot) ~t) ~i))
+(defmacro snapshot
+  ([dataset t]
+     `((get ~dataset :snapshot) ~t))
+  ([dataset t i]
+     `(nth ((get ~dataset :snapshot) ~t) ~i)))
 
 ;; Compute all of the segments at the given time.
 (defn compute-segments [dataset time]
@@ -32,6 +35,10 @@
                   b+m (+ b m)]
               (struct segment (min b b+m) (max b b+m) m b i)))]
     (map #(compute-segment dataset time %) (range (dec (:n dataset))))))
+
+;; Compute the rankings at thus-and-so time.
+(defn compute-rankings [dataset time]
+  (map #(hash-map :i %) (sort-by first (map list (snapshot dataset time) (range)))))
 
 ;; ------------------------- SEGMENT TREE -------------------------
 

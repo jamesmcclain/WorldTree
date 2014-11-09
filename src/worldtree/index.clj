@@ -26,5 +26,5 @@
                          segment-lists
                          segment-trees
                          sorted-lists
-                         (next sorted-lists))))))
+                         (concat (next sorted-lists) (list (series/compute-rankings dataset (dec (dec m))))))))))
       (println "Finished." "\t\t" (java.util.Date.)))))
