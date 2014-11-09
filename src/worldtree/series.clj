@@ -1,9 +1,6 @@
 (ns ^{:author "James McClain <jwm@daystrom-data-concepts.com>"}
   worldtree.series
-  (:require [clojure.set :as set]
-            [clojure.core.reducers :as r]
-            [clojure.core.memoize :as memo])
-  (:use [worldtree.data :only [fnkey]]))
+  (:require [clojure.set :as set]))
 
 (defstruct segment :ymin :ymax :m :b :i)
 (defstruct node :type :y :left :middle :right)
@@ -12,15 +9,7 @@
 (defstruct change :T+t :ij)
 (defstruct frame :chunk-list :change-list)
 
-;; Compute the segment between $f_{i}(t)$ and $f_{i}(t+1)$.
-(defn compute-segment [dataset t i]
-  (let [snapshot (:snapshot dataset)
-        y0 (:f (fnkey dataset :snapshot t i))
-        y1 (:f (fnkey dataset :snapshot (inc t) i))
-        m (- y1 y0)
-        b y0
-        b+m (+ b m)]
-    (struct segment (min b b+m) (max b b+m) m b i)))
+;; ------------------------- SEGMENTS -------------------------
 
 ;; Comparator for segments
 (defn segment< [one two]
@@ -30,15 +19,21 @@
           (== b1 b2) (> m1 m2)
           :else (> b1 b2))))
 
-;; Compute all of the segments at time T.
-(def compute-all-segments
-  (memo/fifo
-   (fn [dataset T] (map #(compute-segment dataset T %) (range (dec (:n dataset)))))))
+(defmacro snapshot [dataset t i]
+  `(nth ((get ~dataset :snapshot) ~t) ~i))
 
-;; Segments at time T sorted by rank.
-(def compute-sorted-segments
-  (memo/fifo
-   (fn [dataset T] (sort segment< (compute-all-segments dataset T)))))
+;; Compute all of the segments at the given time.
+(defn compute-segments [dataset time]
+  (letfn [(compute-segment [dataset ^long t ^long i]
+            (let [y0 (snapshot dataset t i)
+                  y1 (snapshot dataset (inc t) i)
+                  m (- y1 y0)
+                  b y0
+                  b+m (+ b m)]
+              (struct segment (min b b+m) (max b b+m) m b i)))]
+    (map #(compute-segment dataset time %) (range (dec (:n dataset))))))
+
+;; ------------------------- SEGMENT TREE -------------------------
 
 ;; Take a sorted list of segments and return a segment tree suitable
 ;; for finding overlapping segments.
@@ -50,9 +45,6 @@
               (right? [segment] (> (:ymin segment) y))]
         (let [[left middle right]
               (loop [left [] middle [] right [] segments segments]
-                ;; NOTE: the fact that the lists are vectors means
-                ;; that the sorted order will be preserved when lists
-                ;; are built up with conj.
                 (if (empty? segments)
                   [left middle right]   ; if done, return the lists
                   (let [segment (first segments)
@@ -66,77 +58,74 @@
             (struct leaf :leaf segments)
             (struct node :node y (build-segment-tree left) (build-segment-tree middle) (build-segment-tree right))))))))
 
-;; Find the point of intersection between two segments (the time of
-;; intersection of the segments).
-(defn compute-intersection [T segment1 segment2]
-  (let [{m1 :m b1 :b} segment1
-        {m2 :m b2 :b} segment2]
-    (if (not (== m1 m2))
-      (let [t (/ (- b2 b1) (- m1 m2))
-            i (:i segment1)
-            j (:i segment2)
-            [i j] [(min i j) (max i j)]]
-        (if (and (< 0.0 t) (< t 1.0))
-          (struct intersection (+ t T) i j))))))
-
 ;; Query the segment tree for segments that intersect q after time
 ;; T+t.  Only the first such segment is returned.
-(defn query-segment-tree [T tree q T+t]
-  (letfn [(after? [inter] ; does the intersection before time T+t?
-            (if (not (nil? inter))
-              (> (:T+t inter) T+t)))]
-    (cond
-                                        ; if this is a node, query the subtrees
-     (= (:type tree) :node)
-     (let [y (:y tree)
-           ymin (:ymin q)
-           ymax (:ymax q)
-           inters (remove nil?
-                          (list (query-segment-tree T (:middle tree) q T+t)
-                                (if (<= ymin y) (query-segment-tree T (:left tree) q T+t))
-                                (if (>= ymax y) (query-segment-tree T (:right tree) q T+t))))]
-       (if (not (empty? inters))
-         (reduce (partial min-key :T+t) inters)))
-                                        ; if this is a leaf, find the first intersection after T+t
-     (= (:type tree) :leaf)
-     (let [inters (filter after? (map #(compute-intersection T q %) (:segments tree)))]
-       (if (not (empty? inters))
-         (reduce (partial min-key :T+t) inters)))
-                                        ; otherwise, do nothing
-     :else nil)))
+(defn- query-segment-tree [T tree q T+t]
+  (letfn [(compute-intersection [T segment1 segment2]
+            (let [{m1 :m b1 :b} segment1
+                  {m2 :m b2 :b} segment2]
+              (if (not (== m1 m2))
+                (let [t (/ (- b2 b1) (- m1 m2))
+                      i (:i segment1)
+                      j (:i segment2)
+                      [i j] [(min i j) (max i j)]]
+                  (if (and (< 0.0 t) (< t 1.0))
+                    (struct intersection (+ t T) i j))))))
+          (after-time? [inter] ; after time T+t?
+            (if (not (nil? inter)) (> (:T+t inter) T+t)))]
+    (cond (= (:type tree) :node) ; node
+          (let [y (:y tree)
+                ymin (:ymin q)
+                ymax (:ymax q)
+                inters (list (query-segment-tree T (:middle tree) q T+t)
+                             (if (<= ymin y) (query-segment-tree T (:left tree) q T+t))
+                             (if (>= ymax y) (query-segment-tree T (:right tree) q T+t)))
+                inters (remove nil? inters)]
+            (if (not (empty? inters))
+              (reduce (partial min-key :T+t) inters)))
+          (= (:type tree) :leaf) ; leaf
+          (let [inters (map #(compute-intersection T q %) (:segments tree))
+                inters (filter after-time? inters)]
+            (if (not (empty? inters))
+              (reduce (partial min-key :T+t) inters))))))
+
+;; ------------------------- CHUNKS AND FRAMES -------------------------
 
 ;; Find all of the intersections that change the composition of the
 ;; chunk for times between (T,T+1).
-(defn chunk-intersection-changes [T tree segments starting-segment]
+(defn- compute-chunk-intersections [T tree segments starting-segment]
   (loop [current-segment starting-segment
          current-time (+ T 0.0)
          trace []]
     (let [inter (query-segment-tree T tree current-segment current-time)]
       (if (nil? inter)
-                                        ; no more intersections in this frame, return trace
-        trace
-                                        ; otherwise, continue tracing
+        trace ; no more intersections in this frame, return trace
         (let [next-index (if (== (:i inter) (:i current-segment))
                            (:j inter) (:i inter)) ; the index of the intersecting segment
               next-segment (nth segments next-index) ; the intersecting segment
               next-time (:T+t inter)
               change (struct change next-time (list (:i current-segment) next-index))]
-          (if (segment< next-segment current-segment)
-                                        ; if next-segment has better rank, chunk does not change.
-            (recur next-segment next-time trace)
-                                        ; otherwise, it does
-            (recur next-segment next-time (conj trace change))))))))
+          (if (not (segment< next-segment current-segment))
+            ;; If next-segment has a worse rank than the
+            ;; current-segment, then the former's intersection with
+            ;; the latter changes the chunk's composition, so that
+            ;; intersection must be recorded.
+            (recur next-segment next-time (conj trace change))
+            ;; Otherwise, if next-segment has a better rank, that
+            ;; means that it is intersecting the current segment from
+            ;; a superior position.  The fact that next-segment is the
+            ;; new bottom of the chunk needs to be remembered, but the
+            ;; intersection itself does not.
+            (recur next-segment next-time trace)))))))
 
 ;; Find all of the intersections that change the composition of the
-;; chunk for all times between (T,T+1].  This is done by using
-;; chunk-intersection-changes, then tracing through from T+0 using
-;; those intersections.  After that is done, the difference between
-;; what the intersections do and the chunk at time T+1 is found and
-;; recorded.
-(defn chunk-all-changes [T tree segments sortedT+0 sortedT+1 chunk]
-  (let [trace (chunk-intersection-changes T tree segments (nth sortedT+0 (dec chunk)))
-        A (set (take chunk (map :i sortedT+0))) ; the set of series in the chunk at time T
-        B (loop [current A trace trace] ; the chunk just before T+1
+;; chunk for all times between (T,T+1].  First use
+;; compute-chunk-intersections, then look at the difference between
+;; what that does and the composition at time T+1.
+(defn- compute-chunk-changes [tick segments tree sorted-a sorted-b chunk]
+  (let [trace (compute-chunk-intersections tick tree segments (nth sorted-a (dec chunk)))
+        A (set (take chunk (map :i sorted-a))) ; the set of series in the chunk at the start time
+        B (loop [current A trace trace] ; the chunk just before the end time
             (if (empty? trace)
               current
               (let [change (first trace)
@@ -144,36 +133,21 @@
                     out (first (:ij change))
                     in (second (:ij change))]
                 (if (not (current in))
-                                        ; remove old member and add new one
+                  ;; If the new series "in" is not already in chunk,
+                  ;; then it does need to be added.
                   (recur (conj (disj current out) in) trace)
-                                        ; otherwise, no change
+                  ;; If "in" is already in the chunk, then there is no
+                  ;; need to do a swap.
                   (recur current trace)))))
-        C (set (take chunk (map :i sortedT+1))) ; the chunk at time T+1
+        C (set (take chunk (map :i sorted-b))) ; the chunk at the end time
         B-C (set/difference B C)
         C-B (set/difference C B)
-        enders (map #(struct change (+ T 1.0) (list %1 %2)) B-C C-B)]
+        enders (map #(struct change (+ tick 1.0) (list %1 %2)) B-C C-B)]
     (concat trace enders)))
 
-;; Record all of the changes of rank in the dataset that are relevant
-;; vis-a-vis chunks.
-(defn build-index [dataset dir]
-  (letfn [(is-dir? [thing] (.isDirectory (java.io.File. thing)))
-          (exists? [thing] (.exists (java.io.File. thing)))]
-    (let [m (:m dataset)
-          subdir (map #(str dir "/" %) (:chunks dataset))]
-      (assert (= (filter is-dir? subdir) (filter exists? subdir))
-              "There is at least one non-directory with the same name as a necessary directory.")
-      (doseq [dir (remove is-dir? subdir)] (.mkdirs (java.io.File. dir))) ; make directories
-      (doseq [T (range (dec m))] ; for every time
-        (let [segments (compute-all-segments dataset T) ; segments at time T sorted by index
-              sortedT+0 (compute-sorted-segments dataset T) ; segments at time T+0 sorted by rank
-              sortedT+1 (compute-sorted-segments dataset (inc T)) ; segments at time T+1 sorted by rank
-              tree (build-segment-tree (vec segments))]
-          (if (== 0 (mod T 107))
-            (println (int (/ T m 0.01)) "% \t" (java.util.Date.)))
-          (doseq [chunk (:chunks dataset)] ; for every chunk size
-            (let [chunk-list (set (map :i (take chunk sortedT+0))) ; the set of series in this chunk
-                  change-list (chunk-all-changes T tree segments sortedT+0 sortedT+1 chunk)]
-              (spit (str dir "/" chunk "/" T)
-                    (struct frame chunk-list change-list))))))
-      (println "Finished."))))
+;; Find all of the action in (T,T+1] and record it.
+(defn compute-and-store-frame [dir chunks tick segments tree sorted-a sorted-b]
+  (doseq [chunk chunks]
+    (let [chunk-list (map :i (take chunk sorted-a))
+          change-list (compute-chunk-changes tick segments tree sorted-a sorted-b chunk)]
+      (spit (str dir "/" chunk "/" tick) (struct frame chunk-list change-list)))))

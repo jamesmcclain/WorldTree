@@ -11,4 +11,4 @@
                  [org.clojure/core.memoize "0.5.6"]]
   :source-paths ["src"]
   :main worldtree.core
-  :aot [worldtree.core worldtree.data worldtree.series])
+  :aot [worldtree.core worldtree.data worldtree.series worldtree.index])
