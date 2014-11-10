@@ -13,18 +13,15 @@
               "There is at least one non-directory with the same name as a necessary directory.")
       (doseq [dir (remove is-dir? subdir)] (.mkdirs (java.io.File. dir)))
                                         ; compute
-      (println "Segment Lists" "\t\t" (java.util.Date.))
+      (println (java.util.Date.) " ... ")
       (let [times (range (dec m))
-            segment-lists (doall (pmap (partial series/compute-segments dataset) times))]
-        (println "Sorted Segment Lists" "\t" (java.util.Date.))
-        (let [sorted-lists (pmap #(sort series/segment< %) segment-lists)]
-          (println "Segment Trees" "\t\t" (java.util.Date.))
-          (let [segment-trees (pmap series/build-segment-tree segment-lists)]
-            (println "Building Index" "\t\t" (java.util.Date.))
-            (dorun (pmap (partial series/compute-and-store-frame dir chunks)
-                         times
-                         segment-lists
-                         segment-trees
-                         sorted-lists
-                         (concat (next sorted-lists) (list (series/compute-rankings dataset (dec (dec m))))))))))
-      (println "Finished." "\t\t" (java.util.Date.)))))
+            segment-lists (doall (pmap (partial series/compute-segments dataset) times))
+            sorted-lists (pmap #(sort series/segment< %) segment-lists)
+            segment-trees (pmap series/build-segment-tree segment-lists)]
+        (dorun (pmap (partial series/compute-and-store-frame dir chunks)
+                     times
+                     segment-lists
+                     segment-trees
+                     sorted-lists
+                     (concat (next sorted-lists) (list (series/compute-rankings dataset (dec (dec m))))))))
+      (println (java.util.Date.)))))
