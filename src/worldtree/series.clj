@@ -137,8 +137,7 @@
               current
               (let [change (first trace)
                     trace (rest trace)
-                    out (first (:ij change))
-                    in (second (:ij change))]
+                    [out in] (:ij change)]
                 (if (not (current in))
                   ;; If the new series "in" is not already in chunk,
                   ;; then it does need to be added.
