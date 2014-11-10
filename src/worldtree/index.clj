@@ -17,9 +17,9 @@
       (let [times (range (dec m))
             segment-lists (doall (pmap (partial series/compute-segments dataset) times))]
         (println "Sorted Segment Lists" "\t" (java.util.Date.))
-        (let [sorted-lists (doall (pmap #(sort series/segment< %) segment-lists))]
+        (let [sorted-lists (pmap #(sort series/segment< %) segment-lists)]
           (println "Segment Trees" "\t\t" (java.util.Date.))
-          (let [segment-trees (doall (pmap series/build-segment-tree segment-lists))]
+          (let [segment-trees (pmap series/build-segment-tree segment-lists)]
             (println "Building Index" "\t\t" (java.util.Date.))
             (dorun (pmap (partial series/compute-and-store-frame dir chunks)
                          times
