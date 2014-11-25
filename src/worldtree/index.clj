@@ -34,19 +34,20 @@
       (let [change (first changes)]
         (if (or (nil? change) (>= (:T+t change) t))
           ;; no more changes and/or past query time, return topk
-          (do
-            (assert (== (count topk) k))
-            topk)
+          topk
           ;; update the topk and iterate again
           (let [[out in] (:ij change)]
-            (recur (conj (disj topk out) in) (rest changes))))))))
+            (if (and (not (topk in)) (topk out))
+              (recur (conj (disj topk out) in) (rest changes))
+              (recur topk (rest changes)))))))))
 
 ;; Do n random queries.  This function may only work on Linux (it
-;; certainly requires a /proc filesystem).
+;; certainly requires a /proc filesystem and for /proc/self/io to
+;; exist [the latter is not the case on Joyent Ubuntu 12.04 virtual
+;; machines, for example]).
 (defn random-queries [dir k t n]
   (letfn [(get-io [] ; read information out of /proc/$pid/io
-            (let [pid (first (string/split (.getName (java.lang.management.ManagementFactory/getRuntimeMXBean)) #"@"))
-                  [rchar _ syscr _ _ _ _] (map #(Double/parseDouble %) (re-seq #"\d+" (slurp (str "/proc/" pid "/io"))))]
+            (let [[rchar _ syscr _ _ _ _] (map #(Double/parseDouble %) (re-seq #"\d+" (slurp (str "/proc/self/io"))))]
               [rchar syscr]))
           (get-millis [] ; current time in milliseconds
             (double (.getTimeInMillis (java.util.Calendar/getInstance))))
@@ -56,5 +57,5 @@
       (dotimes [_ n]
         (query dir k (rand (dec t))))
       (let [after (get-vitals)]
-        ; rchars per query, syscr per query, milliseconds per query
+        ;; characters read per query, read system calls per query, milliseconds per query
         (map #(/ % n) (map - after before))))))
