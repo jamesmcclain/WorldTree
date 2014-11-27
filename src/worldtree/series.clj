@@ -1,13 +1,19 @@
-(ns ^{:author "James McClain <jwm@daystrom-data-concepts.com>"}
+(ns ^{:author "James McClain <jwm@destroy-data-concepts.com>"}
   worldtree.series
-  (:require [clojure.set :as set]))
+  (:require [clojure.set :as set]
+            [clojure.java.io :as io])
+  (:use [gloss.core]
+        [gloss.io]))
 
 (defstruct segment :ymin :ymax :m :b :i)
 (defstruct node :type :y :left :middle :right)
 (defstruct leaf :type :segments)
 (defstruct intersection :T+t :i :j)
 (defstruct change :T+t :ij)
-(defstruct frame :chunk-list :change-list)
+(defstruct timestep :chunk-list :change-list)
+
+(def change-frame (compile-frame (struct change :float64 [:int32 :int32])))
+(def timestep-frame (compile-frame (struct timestep (repeated :int32) (repeated change-frame))))
 
 ;; ------------------------- SEGMENTS AND RANKINGS -------------------------
 
@@ -38,7 +44,7 @@
 
 ;; Compute the rankings at thus-and-so time.
 (defn compute-rankings [dataset time]
-  (map #(hash-map :i %) (sort-by first (map list (snapshot dataset time) (range)))))
+  (map #(hash-map :i %) (map second (sort-by first (map list (snapshot dataset time) (range))))))
 
 ;; ------------------------- SEGMENT TREE -------------------------
 
@@ -96,17 +102,17 @@
             (if (not (empty? inters))
               (reduce (partial min-key :T+t) inters))))))
 
-;; ------------------------- CHUNKS AND FRAMES -------------------------
+;; ------------------------- CHUNKS AND TIMESTEPS -------------------------
 
 ;; Find all of the intersections that change the composition of the
 ;; chunk for times between (T,T+1).
-(defn- compute-chunk-intersections [T tree segments starting-segment]
+(defn- compute-chunk-intersections [tick segments tree starting-segment]
   (loop [current-segment starting-segment
-         current-time (+ T 0.0)
+         current-time (+ tick 0.0)
          trace []]
-    (let [inter (query-segment-tree T tree current-segment current-time)]
+    (let [inter (query-segment-tree tick tree current-segment current-time)]
       (if (nil? inter)
-        trace ; no more intersections in this frame, return trace
+        trace ; no more intersections in this timestep, return trace
         (let [next-index (if (== (:i inter) (:i current-segment))
                            (:j inter) (:i inter)) ; the index of the intersecting segment
               next-segment (nth segments next-index) ; the intersecting segment
@@ -130,7 +136,7 @@
 ;; compute-chunk-intersections, then look at the difference between
 ;; what that does and the composition at time T+1.
 (defn- compute-chunk-changes [tick segments tree sorted-a sorted-b chunk]
-  (let [trace (compute-chunk-intersections tick tree segments (nth sorted-a (dec chunk)))
+  (let [trace (compute-chunk-intersections tick segments tree (nth sorted-a (dec chunk)))
         A (set (take chunk (map :i sorted-a))) ; the set of series in the chunk at the start time
         B (loop [current A trace trace] ; the chunk just before the end time
             (if (empty? trace)
@@ -152,8 +158,14 @@
     (concat trace enders)))
 
 ;; Find all of the action in (T,T+1] and record it.
-(defn compute-and-store-frame [dir chunks tick segments tree sorted-a sorted-b]
+(defn compute-and-store-timestep [dir chunks tick segments tree sorted-a sorted-b]
   (doseq [chunk chunks]
     (let [chunk-list (map :i (take chunk sorted-a))
-          change-list (compute-chunk-changes tick segments tree sorted-a sorted-b chunk)]
-      (spit (str dir "/" chunk "/" tick) (struct frame chunk-list change-list)))))
+          change-list (compute-chunk-changes tick segments tree sorted-a sorted-b chunk)
+          timestep (struct timestep chunk-list change-list)
+          filename (str dir "/" chunk "/" tick)]
+      (with-open [out (io/output-stream filename)]
+        (encode-to-stream timestep-frame out (list timestep))))))
+
+;; Fetch timestep (T,T+1].
+(defn fetch-timestep [dir chunk tick])

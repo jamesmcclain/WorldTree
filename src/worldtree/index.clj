@@ -19,7 +19,7 @@
             segment-lists (doall (pmap (partial series/compute-segments dataset) times))
             sorted-lists (pmap #(sort series/segment< %) segment-lists)
             segment-trees (pmap series/build-segment-tree segment-lists)]
-        (dorun (pmap (partial series/compute-and-store-frame dir chunks)
+        (dorun (pmap (partial series/compute-and-store-timestep dir chunks)
                      times
                      segment-lists
                      segment-trees
@@ -29,8 +29,8 @@
 
 ;; Query a search index.
 (defn query [dir k t]
-  (let [frame (read-string (slurp (str dir "/" k "/" (int t))))]
-    (loop [topk (set (:chunk-list frame)) changes (:change-list frame)]
+  (let [timestep (read-string (slurp (str dir "/" k "/" (int t))))]
+    (loop [topk (set (:chunk-list timestep)) changes (:change-list timestep)]
       (let [change (first changes)]
         (if (or (nil? change) (>= (:T+t change) t))
           ;; no more changes and/or past query time, return topk
