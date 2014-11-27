@@ -23,8 +23,7 @@
                      times
                      segment-lists
                      segment-trees
-                     sorted-lists
-                     (concat (next sorted-lists) (list (series/compute-rankings dataset (dec (dec m))))))))
+                     sorted-lists)))
       (println (java.util.Date.)))))
 
 ;; Query a search index.

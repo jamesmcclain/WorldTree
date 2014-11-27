@@ -42,10 +42,6 @@
               (struct segment (min b b+m) (max b b+m) m b i)))]
     (map #(compute-segment dataset time %) (range (dec (:n dataset))))))
 
-;; Compute the rankings at thus-and-so time.
-(defn compute-rankings [dataset time]
-  (map #(hash-map :i %) (map second (sort-by first (map list (snapshot dataset time) (range))))))
-
 ;; ------------------------- SEGMENT TREE -------------------------
 
 ;; Take a sorted list of segments and return a segment tree suitable
@@ -131,37 +127,11 @@
             ;; intersection itself does not.
             (recur next-segment next-time trace)))))))
 
-;; Find all of the intersections that change the composition of the
-;; chunk for all times between (T,T+1].  First use
-;; compute-chunk-intersections, then look at the difference between
-;; what that does and the composition at time T+1.
-(defn- compute-chunk-changes [tick segments tree sorted-a sorted-b chunk]
-  (let [trace (compute-chunk-intersections tick segments tree (nth sorted-a (dec chunk)))
-        A (set (take chunk (map :i sorted-a))) ; the set of series in the chunk at the start time
-        B (loop [current A trace trace] ; the chunk just before the end time
-            (if (empty? trace)
-              current
-              (let [change (first trace)
-                    trace (rest trace)
-                    [out in] (:ij change)]
-                (if (not (current in))
-                  ;; If the new series "in" is not already in chunk,
-                  ;; then it does need to be added.
-                  (recur (conj (disj current out) in) trace)
-                  ;; If "in" is already in the chunk, then there is no
-                  ;; need to do a swap.
-                  (recur current trace)))))
-        C (set (take chunk (map :i sorted-b))) ; the chunk at the end time
-        B-C (set/difference B C)
-        C-B (set/difference C B)
-        enders (map #(struct change (+ tick 1.0) (list %1 %2)) B-C C-B)]
-    (concat trace enders)))
-
 ;; Find all of the action in (T,T+1] and record it.
-(defn compute-and-store-timestep [dir chunks tick segments tree sorted-a sorted-b]
+(defn compute-and-store-timestep [dir chunks tick segments tree sorted-a]
   (doseq [chunk chunks]
     (let [chunk-list (map :i (take chunk sorted-a))
-          change-list (compute-chunk-changes tick segments tree sorted-a sorted-b chunk)
+          change-list (compute-chunk-intersections tick segments tree (nth sorted-a (dec chunk)))
           timestep (struct timestep chunk-list change-list)
           filename (str dir "/" chunk "/" tick)]
       (with-open [out (io/output-stream filename)]
