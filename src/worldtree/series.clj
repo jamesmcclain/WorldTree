@@ -127,7 +127,7 @@
             ;; intersection itself does not.
             (recur next-segment next-time trace)))))))
 
-;; Find all of the action in (T,T+1] and record it.
+;; Find all of the action in [T,T+1) and record it.
 (defn compute-and-store-timestep [dir chunks tick segments tree sorted-a]
   (doseq [chunk chunks]
     (let [chunk-list (map :i (take chunk sorted-a))
@@ -137,5 +137,10 @@
       (with-open [out (io/output-stream filename)]
         (encode-to-stream timestep-frame out (list timestep))))))
 
-;; Fetch timestep (T,T+1].
-(defn fetch-timestep [dir chunk tick])
+;; Fetch timestep [T,T+1).
+(defn fetch-timestep [dir chunk tick]
+  (let [file (io/file (str dir "/" chunk "/" tick))]
+    (with-open [in (io/input-stream file)]
+      (let [buffer (byte-array (.length file))]
+        (.read in buffer)
+        (decode timestep-frame buffer)))))

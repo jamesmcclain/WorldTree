@@ -28,7 +28,7 @@
 
 ;; Query a search index.
 (defn query [dir k t]
-  (let [timestep (read-string (slurp (str dir "/" k "/" (int t))))]
+  (let [timestep (series/fetch-timestep dir k (int t))]
     (loop [topk (set (:chunk-list timestep)) changes (:change-list timestep)]
       (let [change (first changes)]
         (if (or (nil? change) (>= (:T+t change) t))
