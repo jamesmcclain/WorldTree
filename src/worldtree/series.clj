@@ -12,8 +12,8 @@
 (defstruct change :T+t :ij)
 (defstruct timestep :chunk-list :change-list)
 
-(def change-frame (compile-frame (struct change :float64 [:int32 :int32])))
-(def timestep-frame (compile-frame (struct timestep (repeated :int32) (repeated change-frame))))
+(def change-frame (compile-frame (struct change :float64 [:uint16 :uint16]))) ; n ≤ 2^16 - 1
+(def timestep-frame (compile-frame (struct timestep (repeated :uint16) (repeated change-frame))))
 
 ;; ------------------------- SEGMENTS AND RANKINGS -------------------------
 
