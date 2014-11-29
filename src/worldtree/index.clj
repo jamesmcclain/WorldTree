@@ -28,14 +28,12 @@
 
 ;; Query a search index.
 (defn query [dir k t]
-  (let [timestep (series/fetch-timestep dir k (int t))]
-    (loop [topk (set (:chunk-list timestep)) changes (:change-list timestep)]
+  (let [timestep (series/fetch-timestep-memo dir k (int t))]
+    (loop [topk (:chunk-list timestep) changes (:change-list timestep)]
       (let [change (first changes)]
         (if (or (nil? change) (>= (:T+t change) t))
-          ;; no more changes and/or past query time, return topk
-          topk
-          ;; update the topk and iterate again
-          (let [[out in] (:ij change)]
+          topk ; no more changes and/or past query time, return topk
+          (let [[out in] (:ij change)] ; update the topk and iterate again
             (if (and (not (topk in)) (topk out))
               (recur (conj (disj topk out) in) (rest changes))
               (recur topk (rest changes)))))))))

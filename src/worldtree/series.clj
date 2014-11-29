@@ -1,7 +1,8 @@
 (ns ^{:author "James McClain <jwm@destroy-data-concepts.com>"}
   worldtree.series
   (:require [clojure.set :as set]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [clojure.core.memoize :as memo])
   (:use [gloss.core]
         [gloss.io]))
 
@@ -143,4 +144,7 @@
     (with-open [in (io/input-stream file)]
       (let [buffer (byte-array (.length file))]
         (.read in buffer)
-        (decode timestep-frame buffer)))))
+        (let [step (decode timestep-frame buffer)]
+          (struct timestep (set (:chunk-list step)) (:change-list step)))))))
+
+(def fetch-timestep-memo (memo/fifo fetch-timestep :fifo/threshold (* 12 1024)))
