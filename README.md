@@ -72,6 +72,11 @@ where the search index is queried for *k=256* at time *t=33*.
 The parameter *k* must be a power of two *≥ 2* and *≤ n/2*.
 If the data set contains 1024 time steps, then the parameter *t* must be a real number in the interval *[0,1023)*.
 
+## Replication of Experiments
+
+Detailed instructions on how to replicate the experiments reported on in the article can be found
+[here](http://jamesmcclain.info/TOPK/replication.html).
+
 ## License
 
 Copyright © 2014 James McClain
